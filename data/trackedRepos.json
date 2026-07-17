@@ -1,0 +1,16 @@
+[
+  {
+    "name": "sample-repo-1",
+    "owner": "user",
+    "trackingStartDate": "2025-03-16",
+    "notes": "Main project repository",
+    "priority": "high"
+  },
+  {
+    "name": "sample-repo-2",
+    "owner": "user",
+    "trackingStartDate": "2025-03-16",
+    "notes": "Secondary project",
+    "priority": "medium"
+  }
+]
