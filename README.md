@@ -233,7 +233,3 @@ RepoTracker follows strict security principles:
 - Employs server-side authentication and least privilege tokens.
 
 ---
-
-## 📜 License
-
-MIT
