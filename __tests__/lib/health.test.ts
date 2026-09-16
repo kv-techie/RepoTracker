@@ -16,6 +16,7 @@ function makeHealth(score: number, level: string, reasons: string[] = []): Healt
       base_score: 50,
       commit_recency_bonus: 0,
       readme_bonus: 0,
+      clean_branches_bonus: 0,
       stale_branch_penalty: 0,
       uncommitted_penalty: -10,
       no_activity_penalty: -15,
@@ -24,10 +25,15 @@ function makeHealth(score: number, level: string, reasons: string[] = []): Healt
   };
 }
 
+// Colours come from the monochrome design system tokens: strongest ink for the best state.
 describe('healthColor', () => {
-  it('returns green for excellent', () => expect(healthColor('excellent')).toBe('#10b981'));
-  it('returns red for critical', () => expect(healthColor('critical')).toBe('#ef4444'));
-  it('returns amber for fair', () => expect(healthColor('fair')).toBe('#f59e0b'));
+  it('uses ink for excellent', () => expect(healthColor('excellent')).toBe('var(--color-ink)'));
+  it('uses silver for critical', () => expect(healthColor('critical')).toBe('var(--color-silver)'));
+  it('uses slate for fair', () => expect(healthColor('fair')).toBe('var(--color-slate)'));
+  it('gives every level a distinct token', () => {
+    const levels = ['excellent', 'good', 'fair', 'poor', 'critical'] as const;
+    expect(new Set(levels.map(healthColor)).size).toBe(levels.length);
+  });
 });
 
 describe('healthLabel', () => {
@@ -39,9 +45,9 @@ describe('healthLabel', () => {
 });
 
 describe('momentumColor', () => {
-  it('green for growing', () => expect(momentumColor('growing')).toBe('#10b981'));
-  it('orange for declining', () => expect(momentumColor('declining')).toBe('#f97316'));
-  it('indigo for stable', () => expect(momentumColor('stable')).toBe('#6366f1'));
+  it('ink for growing', () => expect(momentumColor('growing')).toBe('var(--color-ink)'));
+  it('stone for declining', () => expect(momentumColor('declining')).toBe('var(--color-stone)'));
+  it('slate for stable', () => expect(momentumColor('stable')).toBe('var(--color-slate)'));
 });
 
 describe('momentumIcon', () => {
@@ -51,8 +57,8 @@ describe('momentumIcon', () => {
 });
 
 describe('stalenessColor', () => {
-  it('green for low', () => expect(stalenessColor('low')).toBe('#10b981'));
-  it('red for critical', () => expect(stalenessColor('critical')).toBe('#ef4444'));
+  it('ink for low', () => expect(stalenessColor('low')).toBe('var(--color-ink)'));
+  it('stone for critical', () => expect(stalenessColor('critical')).toBe('var(--color-stone)'));
 });
 
 describe('parseHealthDisplay', () => {
@@ -67,7 +73,7 @@ describe('parseHealthDisplay', () => {
     const d = parseHealthDisplay(makeHealth(85, 'excellent', ['Good commit frequency']));
     expect(d.score).toBe(85);
     expect(d.level).toBe('excellent');
-    expect(d.color).toBe('#10b981');
+    expect(d.color).toBe('var(--color-ink)');
     expect(d.reasons).toContain('Good commit frequency');
   });
 });

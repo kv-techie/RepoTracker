@@ -9,11 +9,8 @@ export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
-    if (status === 'authenticated') {
-      router.push('/dashboard');
-    } else if (status === 'unauthenticated') {
-      router.push('/login');
-    }
+    // Signed in or not, the dashboard works: without a session it runs in local mode
+    if (status !== 'loading') router.push('/dashboard');
   }, [status, router]);
 
   return (

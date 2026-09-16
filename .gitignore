@@ -49,3 +49,14 @@ env/
 *-wal
 *-shm
 
+
+# Agent local config and secrets (never commit)
+agent/config.json
+agent/.env
+
+# Build output and caches
+*.tsbuildinfo
+out.html
+
+# Supervisor logs
+logs/

@@ -8,6 +8,7 @@ export interface HealthBreakdown {
   base_score: number;
   commit_recency_bonus: number;
   readme_bonus: number;
+  clean_branches_bonus: number;
   stale_branch_penalty: number;
   uncommitted_penalty: number;
   no_activity_penalty: number;
@@ -37,6 +38,11 @@ export interface StalenessInfo {
 }
 
 export interface ReadmeScore {
+  has_code_examples?: boolean;
+  has_screenshots?: boolean;
+  word_count?: number;
+  code_block_count?: number;
+  evidence?: string[];
   score: number;
   has_readme: boolean;
   has_description: boolean;
@@ -60,34 +66,14 @@ export interface HotspotFile {
 }
 
 export interface FileIntelligence {
+  has_tests?: boolean;
+  test_file_count?: number;
+  context_file_count?: number;
+  structure_signals?: string[];
   total_files: number;
   total_lines: number;
+  total_tokens: number;  // heuristic: source bytes / 4
   large_files: LargeFile[];
   hotspots: HotspotFile[];
   recently_modified: string[];
-}
-
-// Legacy types kept for backward compatibility
-export interface ProgressMetrics {
-  repoName: string;
-  totalLines: number;
-  commitCount: number;
-  activityScore: number;
-  healthScore: number;
-  lastUpdateDate: string;
-  estimatedCompletion?: string;
-}
-
-export interface ActivityScore {
-  score: number;
-  level: 'critical' | 'low' | 'moderate' | 'high' | 'very-high';
-  lastCommitAge: number;
-  frequencyTrend: 'increasing' | 'stable' | 'decreasing';
-}
-
-export interface FileMetrics {
-  totalFiles: number;
-  totalLines: number;
-  languages: Record<string, number>;
-  largestFiles: Array<{ path: string; lines: number; language: string }>;
 }

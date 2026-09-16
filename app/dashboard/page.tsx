@@ -2,30 +2,31 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
 
 import type { TrackedRepo, FilterTag } from '@/types/repo';
 import type { AgentStatus } from '@/types/agent';
 import type { Collection } from '@/lib/collections';
 
-import { getHybridRepos, getAgentStatus, triggerScan } from '@/lib/agent';
+import { getHybridRepos, getAgentStatus, triggerScan, updateRepoUserState } from '@/lib/agent';
 import { getCollections } from '@/lib/collections';
 import { exportReposAsCsv, exportReposAsPdf } from '@/lib/export';
 import { getDeployedIds, setDeployed } from '@/lib/deployedRepos';
+import { assignRepoToCollection, getRepoCollection } from '@/lib/collections';
 
 import AgentStatusBar from '@/components/AgentStatus';
 import SmartFilter, { buildFilterCounts } from '@/components/SmartFilter';
 import CollectionsSidebar from '@/components/CollectionsSidebar';
 import RepoListItem from '@/components/RepoListItem';
 import StalenessAlert from '@/components/StalenessAlert';
+import LocalModeBanner from '@/components/LocalModeBanner';
+import Icon from '@/components/Icon';
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
-  const router = useRouter();
 
   const [repos, setRepos] = useState<TrackedRepo[]>([]);
   const [agentStatus, setAgentStatus] = useState<AgentStatus>({
-    online: false, version: '—', watching_folders: [], db_path: '', repo_count: 0, ai_enabled: false,
+    online: false, version: '—', watching_folder_count: 0, repo_count: 0, ai_enabled: false,
   });
   const [collections, setCollections] = useState<Collection[]>([]);
   const [activeFilter, setActiveFilter] = useState<FilterTag | 'all'>('all');
@@ -33,14 +34,6 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [deployedIds, setDeployedIds] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    if (status === 'unauthenticated') router.push('/login');
-  }, [status, router]);
-
-  // Load deployed IDs from localStorage on mount
-  useEffect(() => {
-    setDeployedIds(getDeployedIds());
-  }, []);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -51,8 +44,32 @@ export default function DashboardPage() {
     setIsLoading(false);
   }, []);
 
+  // Deployed flags used to live only in this browser. Move any we still hold to the
+  // agent, so scoring and every other device see them too.
   useEffect(() => {
-    if (status === 'authenticated') loadData();
+    const local = getDeployedIds();
+    setDeployedIds(local);
+    if (local.size === 0) return;
+
+    (async () => {
+      let migrated = false;
+      for (const id of local) {
+        if (id.startsWith('gh-')) continue;  // no agent record to attach it to
+        const updated = await updateRepoUserState(id, { deployed: true });
+        if (updated) {
+          setDeployed(id, false);
+          migrated = true;
+        }
+      }
+      if (migrated) {
+        setDeployedIds(getDeployedIds());
+        loadData();
+      }
+    })();
+  }, [loadData]);
+
+  useEffect(() => {
+    if (status !== 'loading') loadData();
   }, [status, loadData]);
 
   const handleScan = async () => {
@@ -64,23 +81,46 @@ export default function DashboardPage() {
     setCollections(getCollections());
   };
 
-  const handleDeployToggle = (id: string, deployed: boolean) => {
+  // Repos the agent tracks keep their state in SQLite; GitHub-only rows stay in this browser
+  const isAgentRepo = (id: string) => !id.startsWith('gh-');
+
+  const handleDeployToggle = async (id: string, deployed: boolean) => {
+    if (isAgentRepo(id)) {
+      const updated = await updateRepoUserState(id, { deployed });
+      if (updated) {
+        setRepos(prev => prev.map(r => (r.id === id ? { ...r, tags: updated.tags } : r)));
+        return;
+      }
+    }
     setDeployed(id, deployed);
     setDeployedIds(getDeployedIds());
   };
 
-  // Inject deployed tag + suppress stale tag for deployed repos
+  const handleCollectionAssign = async (id: string, collectionId: string | null) => {
+    if (isAgentRepo(id)) {
+      const updated = await updateRepoUserState(id, { collection: collectionId });
+      if (updated) {
+        setRepos(prev => prev.map(r => (r.id === id ? { ...r, collection: updated.collection } : r)));
+        return;
+      }
+    }
+    assignRepoToCollection(id, collectionId);
+    setRepos(prev => [...prev]);
+  };
+
+  // The agent already tags repos it tracks; localStorage covers GitHub-only rows
   const enrichedRepos = repos.map(r => {
-    if (!deployedIds.has(r.id)) return r;
+    if (!deployedIds.has(r.id) || r.tags.includes('deployed')) return r;
     const tags = r.tags.filter(t => t !== 'stale');
-    if (!tags.includes('deployed')) tags.push('deployed');
+    tags.push('deployed');
     return { ...r, tags };
   });
 
   // Filter repos
   const filtered = enrichedRepos.filter(r => {
     if (activeFilter !== 'all' && !r.tags.includes(activeFilter)) return false;
-    if (activeCollection !== null && r.collection !== activeCollection) return false;
+    const collectionId = r.collection ?? getRepoCollection(r.id);
+    if (activeCollection !== null && collectionId !== activeCollection) return false;
     return true;
   });
 
@@ -90,14 +130,15 @@ export default function DashboardPage() {
   const staleCount = enrichedRepos.filter(r => r.tags.includes('stale')).length;
   const unpushedCount = enrichedRepos.filter(r => r.tags.includes('unpushed')).length;
   const activeCount = enrichedRepos.filter(r => r.tags.includes('active')).length;
-  const deployedCount = deployedIds.size;
+  const deployedCount = enrichedRepos.filter(r => r.tags.includes('deployed')).length;
 
   // Staleness alerts — skip deployed repos
   const stalenessAlerts = enrichedRepos.filter(
-    r => r.staleness && ['high', 'critical'].includes(r.staleness.risk) && !deployedIds.has(r.id)
+    r => r.staleness && ['high', 'critical'].includes(r.staleness.risk)
+      && !r.tags.includes('deployed') && !r.tags.includes('missing')
   );
 
-  if (status === 'loading' || (status === 'authenticated' && isLoading)) {
+  if (status === 'loading' || isLoading) {
     return (
       <div className="dashboard-loading">
         <div className="loading-spinner" />
@@ -108,17 +149,13 @@ export default function DashboardPage() {
 
   return (
     <div className="dashboard-root">
+      <LocalModeBanner />
+
       {/* Agent Status Bar */}
       <AgentStatusBar status={agentStatus} onScan={handleScan} />
 
-      {/* Staleness Alerts — deployed repos excluded */}
-      {stalenessAlerts.length > 0 && (
-        <section className="alerts-section">
-          {stalenessAlerts.slice(0, 3).map(r => (
-            r.staleness && <StalenessAlert key={r.id} staleness={r.staleness} repoName={r.name} />
-          ))}
-        </section>
-      )}
+      {/* What needs attention — deployed and missing repos excluded */}
+      <StalenessAlert repos={stalenessAlerts} />
 
       <div className="dashboard-layout">
         {/* Sidebar */}
@@ -132,53 +169,47 @@ export default function DashboardPage() {
         {/* Main content */}
         <main className="dashboard-main">
           {/* Header */}
-          <div className="dashboard-header">
-            <div>
-              <h1 className="dashboard-title">Your Coding Cockpit</h1>
-              <p className="dashboard-sub">Welcome back, {session?.user?.name?.split(' ')[0] ?? 'developer'}</p>
+          <header className="page-head">
+            <div className="page-head-text">
+              <h1 className="page-head-title">Repositories</h1>
+              <p className="page-head-sub">
+                {session?.user?.name
+                  ? `${session.user.name.split(' ')[0]}'s work across ${enrichedRepos.length} tracked repos`
+                  : `${enrichedRepos.length} tracked repos on this machine`}
+              </p>
             </div>
-            <div className="dashboard-actions">
-              <button
-                className="btn-secondary"
-                onClick={() => exportReposAsCsv(repos)}
-                id="export-csv-btn"
-              >
-                ↓ CSV
+            <div className="page-head-actions">
+              <button className="btn-secondary btn-with-icon" onClick={() => exportReposAsCsv(filtered)} id="export-csv-btn">
+                <Icon name="download" size={15} /> CSV
               </button>
-              <button
-                className="btn-secondary"
-                onClick={() => exportReposAsPdf(repos)}
-                id="export-pdf-btn"
-              >
-                ↓ PDF
+              <button className="btn-secondary btn-with-icon" onClick={() => exportReposAsPdf(filtered)} id="export-pdf-btn">
+                <Icon name="download" size={15} /> PDF
               </button>
             </div>
-          </div>
+          </header>
 
-          {/* Stats bar */}
-          <div className="stats-bar">
-            <div className="stat-pill">
-              <span className="stat-pill-value">{enrichedRepos.length}</span>
-              <span className="stat-pill-label">Tracked</span>
+          {/* Summary */}
+          <div className="stat-strip">
+            <div className="stat-cell">
+              <span className="stat-value">{enrichedRepos.length}</span>
+              <span className="stat-label">Tracked</span>
             </div>
-            <div className="stat-pill stat-pill--green">
-              <span className="stat-pill-value">{activeCount}</span>
-              <span className="stat-pill-label">Active</span>
+            <div className="stat-cell">
+              <span className="stat-value">{activeCount}</span>
+              <span className="stat-label">Active</span>
             </div>
-            <div className="stat-pill stat-pill--amber">
-              <span className="stat-pill-value">{staleCount}</span>
-              <span className="stat-pill-label">Stale</span>
+            <div className="stat-cell">
+              <span className="stat-value">{staleCount}</span>
+              <span className="stat-label">Stale</span>
             </div>
-            <div className="stat-pill stat-pill--indigo">
-              <span className="stat-pill-value">{unpushedCount}</span>
-              <span className="stat-pill-label">Unpushed</span>
+            <div className="stat-cell">
+              <span className="stat-value">{unpushedCount}</span>
+              <span className="stat-label">Unpushed</span>
             </div>
-            {deployedCount > 0 && (
-              <div className="stat-pill stat-pill--teal">
-                <span className="stat-pill-value">{deployedCount}</span>
-                <span className="stat-pill-label">Deployed</span>
-              </div>
-            )}
+            <div className="stat-cell">
+              <span className="stat-value">{deployedCount}</span>
+              <span className="stat-label">Deployed</span>
+            </div>
           </div>
 
           {/* Smart Filter */}
@@ -191,10 +222,17 @@ export default function DashboardPage() {
           {/* Repo Grid */}
           {filtered.length === 0 ? (
             <div className="empty-state">
-              <p>No repositories match this filter.</p>
-              {!agentStatus.online && (
+              <Icon name={agentStatus.online ? 'search' : 'alert'} size={22} />
+              <p className="empty-title">
+                {agentStatus.online ? 'No repositories match this filter' : 'The local agent is not running'}
+              </p>
+              {agentStatus.online ? (
+                <button className="btn-secondary btn-sm" onClick={() => setActiveFilter('all')}>
+                  Clear filter
+                </button>
+              ) : (
                 <p className="empty-hint">
-                  Start the local agent (<code>python agent/main.py</code>) and configure watched folders in{' '}
+                  Start it with <code>python agent/main.py</code>, then add folders in{' '}
                   <a href="/settings">Settings</a>.
                 </p>
               )}
@@ -205,8 +243,11 @@ export default function DashboardPage() {
                 <RepoListItem
                   key={repo.id}
                   repo={repo}
-                  isDeployed={deployedIds.has(repo.id)}
+                  isDeployed={repo.tags.includes('deployed')}
                   onDeployToggle={handleDeployToggle}
+                  collections={collections}
+                  collectionId={repo.collection ?? getRepoCollection(repo.id)}
+                  onCollectionAssign={handleCollectionAssign}
                 />
               ))}
             </div>

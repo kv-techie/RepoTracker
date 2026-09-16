@@ -45,6 +45,9 @@ export default function LoginPage() {
         >
           Sign in with GitHub
         </button>
+        <a href="/dashboard" className="login-local-link" id="continue-local-link">
+          Continue with local repos only
+        </a>
       </div>
     </div>
   );

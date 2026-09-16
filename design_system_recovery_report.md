@@ -230,6 +230,62 @@ With Tailwind v4, the transition is significantly easier. The `@theme` directive
 #### 3. Agentation Wrapper Handling
 The user explicitly clarified that the `agentation` package and the `<AgentationWrapper />` component within `app/layout.tsx` were legacy additions and not the cause of the CSS degradation. As requested, these artifacts were left entirely untouched. If hydration errors or overlay collisions occur in the future, this wrapper should be the first point of investigation, but for now, it coexists peacefully with the new Cal.com architecture.
 
+---
+
+### Design Inspiration Sources
+
+The Cal.com style reference that drives RepoTracker's design system was originally discovered through a design showcase/gallery site — a curated portfolio-of-sites that helps developers and designers browse and choose design directions. Below is a comprehensive reference list of such platforms, organized by use-case.
+
+#### Award-Winning & High-End Galleries
+Sites that showcase the absolute cutting edge of web design.
+
+| Site | URL | Best For |
+|------|-----|----------|
+| **Awwwards** | [awwwards.com](https://www.awwwards.com) | Award-winning web design, experimental 3D, WebGL |
+| **SiteInspire** | [siteinspire.com](https://www.siteinspire.com) | Deep filtering by style/type/subject (e.g. "Minimal" + "Dark") |
+| **Godly** | [godly.website](https://godly.website) | Curated landing pages, popular for SaaS/dev tool inspiration |
+| **One Page Love** | [onepagelove.com](https://onepagelove.com) | Single-page websites, portfolios, event sites |
+
+#### Landing Page Galleries
+Focused specifically on how products present themselves.
+
+| Site | URL | Best For |
+|------|-----|----------|
+| **Land-book** | [land-book.com](https://land-book.com) | Landing page design, hero sections, value propositions |
+| **Lapa Ninja** | [lapa.ninja](https://www.lapa.ninja) | Clean landing page gallery, also has UI kits and tutorials |
+| **SaaSpo** | [saaspo.com](https://saaspo.com) | SaaS/B2B pages — filter by "Pricing", "Features", "Login" |
+
+#### Product & UX Pattern Libraries
+For studying how real-world products handle complex flows (dashboards, onboarding, settings).
+
+| Site | URL | Best For |
+|------|-----|----------|
+| **Mobbin** | [mobbin.com](https://mobbin.com) | Web + mobile UI patterns from top tech companies |
+| **Page Flows** | [pageflows.com](https://pageflows.com) | Recordings of real user journeys (onboarding, checkout) |
+| **Refero** | [refero.design](https://refero.design) | Real product screenshots searchable by component/page type |
+| **Screenlane** | [screenlane.com](https://screenlane.com) | Mobile + web UI inspiration, categorized by screen type |
+
+#### Portfolio-Specific Showcases
+For personal or agency portfolio design inspiration.
+
+| Site | URL | Best For |
+|------|-----|----------|
+| **Wall of Portfolios** | [wallofportfolios.com](https://wallofportfolios.com) | UX/UI/product design portfolios, bento grid layouts |
+| **Refs.Gallery** | [refs.gallery](https://refs.gallery) | Portfolio designs with strong storytelling |
+
+#### Design Blogs & Aggregators
+For curated lists, trends, and context on _why_ certain designs work.
+
+| Site | URL | Best For |
+|------|-----|----------|
+| **Muzli** | [muzli.me](https://muzli.me) | Ranked annual lists of best portfolios/sites |
+| **Dribbble** | [dribbble.com](https://dribbble.com) | Design shots, UI concepts, component explorations |
+| **Behance** | [behance.net](https://www.behance.net) | Full case studies, branding, and UI/UX projects |
+
+> **Usage note for RepoTracker**: Since the project follows a "GitHub + Linear + Vercel" design standard (not a startup landing page), the most relevant sources for future UI decisions are **SiteInspire**, **Mobbin**, **Refero**, and **Page Flows** — platforms that prioritize functional, information-dense interfaces over creative experimentation.
+
+---
+
 ### Conclusion
 
 The RepoTracker application has successfully navigated a severe UI degradation event. By rejecting the conflicting "Jarvis" directive and fully embracing the provided Cal.com Style Reference, the dashboard has been transformed into a highly disciplined, visually cohesive, and professional-grade developer tool. 

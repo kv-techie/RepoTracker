@@ -15,6 +15,7 @@ function makeHealth(score: number, level: string): HealthScore {
       base_score: 50,
       commit_recency_bonus: score > 60 ? 20 : 0,
       readme_bonus: 10,
+      clean_branches_bonus: 0,
       stale_branch_penalty: 0,
       uncommitted_penalty: 0,
       no_activity_penalty: 0,

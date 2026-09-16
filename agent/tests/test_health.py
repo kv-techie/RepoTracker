@@ -136,3 +136,112 @@ class TestStalenessInfo:
     def test_custom_thresholds(self):
         s = compute_staleness(_iso(8), stale_threshold_days=7, dead_threshold_days=14)
         assert s.risk == "high"
+
+
+
+class TestRecruiterScoring:
+    def _repo(self, **overrides):
+        repo = {
+            "readme": {"score": 100, "has_installation": True, "has_usage": True,
+                       "has_license": True, "has_description": True},
+            "health": {"score": 80},
+            "staleness": {"risk": "low"},
+            "momentum": {"level": "growing"},
+            "file_intelligence": {"has_tests": True, "test_file_count": 9,
+                                  "structure_signals": ["CI workflow", "test suite", "linter config"],
+                                  "total_files": 40, "total_tokens": 100000},
+            "tags": ["active"],
+            "remote_url": "https://github.com/me/app.git",
+            "description": "Does a thing",
+        }
+        repo.update(overrides)
+        return repo
+
+    def test_old_but_tested_repo_still_scores_for_tests(self):
+        from agent.recruiter import compute_recruiter_score
+
+        old_repo = self._repo(staleness={"risk": "high"}, file_intelligence={
+            "has_tests": True, "test_file_count": 12, "structure_signals": ["test suite"],
+            "recently_modified": [],  # nothing touched this week
+        })
+        assert compute_recruiter_score(old_repo)["signals"]["Test Coverage"] == "Strong"
+
+    def test_no_tests_is_flagged(self):
+        from agent.recruiter import compute_recruiter_score
+
+        result = compute_recruiter_score(self._repo(file_intelligence={"has_tests": False, "test_file_count": 0}))
+        assert result["signals"]["Test Coverage"] == "Weak"
+        assert any("tests" in improvement for improvement in result["improvements"])
+
+    def test_deployed_tag_raises_the_score(self):
+        from agent.recruiter import compute_recruiter_score
+
+        plain = compute_recruiter_score(self._repo())
+        deployed = compute_recruiter_score(self._repo(tags=["active", "deployed"]))
+        assert deployed["portfolio_score"] > plain["portfolio_score"]
+
+    def test_no_invented_interview_metric(self):
+        from agent.recruiter import compute_recruiter_score
+
+        signals = compute_recruiter_score(self._repo())["signals"]
+        assert "Interview Probability" not in signals
+        assert signals["Portfolio Readiness"].startswith(("Strong", "Solid", "Early"))
+
+
+class TestDeployedExemption:
+    """A repo marked deployed is finished on purpose; silence must not be scored as decay."""
+
+    def test_inactivity_penalty_does_not_apply(self):
+        from agent.health import compute_health
+
+        stale = compute_health(_iso(153), 6, True, 0)
+        deployed = compute_health(_iso(153), 6, True, 0, deployed=True)
+
+        assert stale.score == 35
+        assert deployed.score == 80  # no inactivity penalty, plus the stability bonus
+        assert deployed.breakdown.no_activity_penalty == 0
+        assert deployed.breakdown.commit_recency_bonus == 20
+        assert any("deployed" in r for r in deployed.breakdown.reasons)
+
+    def test_real_problems_still_count(self):
+        from agent.health import compute_health
+
+        deployed = compute_health(_iso(153), 30, False, 2, deployed=True)
+
+        assert deployed.breakdown.uncommitted_penalty == -20  # uncommitted work still counts
+        assert deployed.breakdown.readme_bonus == 0           # missing README still costs
+        assert deployed.breakdown.stale_branch_penalty == -20 # stale branches still count
+
+    def test_staleness_is_reported_as_low(self):
+        from agent.health import compute_staleness
+
+        info = compute_staleness(_iso(153), deployed=True)
+
+        assert info.risk == "low"
+        assert info.days_since_activity == 153  # the real figure is still reported
+        assert "deployed" in info.message.lower()
+
+    def test_momentum_is_not_tracked(self):
+        from agent.health import compute_momentum
+
+        momentum = compute_momentum(0, 12, deployed=True)
+
+        assert momentum.level == "stable"
+        assert "deployed" in momentum.reason.lower()
+
+    def test_deployed_repo_is_not_labelled_active(self, tmp_path):
+        import git
+        from agent.scanner import _scan_repo
+
+        repo = git.Repo.init(str(tmp_path))
+        repo.config_writer().set_value("user", "name", "T").release()
+        repo.config_writer().set_value("user", "email", "t@t.com").release()
+        (tmp_path / "README.md").write_text("# Shipped")
+        repo.index.add(["README.md"])
+        repo.index.commit("ship")
+
+        record, _ = _scan_repo(str(tmp_path), 30, 90, deployed=True)
+
+        assert "deployed" in record.tags
+        assert "active" not in record.tags
+        assert "stale" not in record.tags

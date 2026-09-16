@@ -18,7 +18,7 @@ describe('SmartFilter', () => {
     expect(screen.getByText('Active')).toBeInTheDocument();
     expect(screen.getByText('Stale')).toBeInTheDocument();
     expect(screen.getByText('Unpushed')).toBeInTheDocument();
-    expect(screen.getByText('Local Only')).toBeInTheDocument();
+    expect(screen.getByText('Local only')).toBeInTheDocument();
     expect(screen.getByText('Broken')).toBeInTheDocument();
   });
 
@@ -32,6 +32,12 @@ describe('SmartFilter', () => {
     render(<SmartFilter active="active" onChange={onChange} />);
     const activeTab = screen.getByRole('tab', { name: /Active/i });
     expect(activeTab).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('hides a filter no repo is in', () => {
+    render(<SmartFilter active="all" counts={{ all: 4, active: 4, stale: 0 }} onChange={onChange} />);
+    expect(screen.queryByText('Stale')).not.toBeInTheDocument();
+    expect(screen.getByText('Active')).toBeInTheDocument();
   });
 
   it('shows count badges when provided', () => {

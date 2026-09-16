@@ -1,11 +1,16 @@
+' Starts RepoTracker in the background at login.
+'
+' This launches scripts\start-repotracker.ps1, which runs the agent and a production
+' web server, writes logs to the logs\ folder, and restarts the agent if it stops
+' answering. Check logs\supervisor.log if something looks wrong.
+
 Set WshShell = CreateObject("WScript.Shell")
 
-' Get the exact directory of this script so we run in the RepoTracker folder
 scriptDir = CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName)
 WshShell.CurrentDirectory = scriptDir
 
-' Run the Python Agent Backend completely invisibly (0 means hidden window)
-WshShell.Run "cmd /c agent\venv\Scripts\python.exe agent\main.py", 0, False
+command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & _
+          scriptDir & "\scripts\start-repotracker.ps1"""
 
-' Run the Next.js Frontend completely invisibly
-WshShell.Run "cmd /c npm run dev", 0, False
+' 0 = no window, False = do not wait
+WshShell.Run command, 0, False

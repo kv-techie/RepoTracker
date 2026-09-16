@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server';
-
-const AGENT_BASE = process.env.AGENT_BASE_URL ?? 'http://127.0.0.1:8001';
+import { agentFetch } from '@/lib/agentProxy';
 
 export async function POST() {
   try {
-    const res = await fetch(`${AGENT_BASE}/scan`, { method: 'POST' });
+    const res = await agentFetch(`/scan`, { method: 'POST' });
     if (!res.ok) throw new Error(`Agent returned ${res.status}`);
     return NextResponse.json(await res.json());
   } catch {

@@ -1,3 +1,9 @@
+/** "owner/repo" (lowercase) from any GitHub remote: HTTPS, SSH, with or without .git. */
+export function githubSlug(url?: string | null): string | null {
+  const match = url?.match(/github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?\/?$/i);
+  return match ? match[1].toLowerCase() : null;
+}
+
 export function truncateString(str: string, maxLength: number): string {
   if (str.length <= maxLength) return str;
   return str.slice(0, maxLength - 3) + '...';

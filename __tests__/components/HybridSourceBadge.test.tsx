@@ -39,7 +39,7 @@ describe('HybridSourceBadge', () => {
 
   it('has a title attribute with source description', () => {
     render(<HybridSourceBadge source="local_git" />);
-    const badge = screen.getByTitle(/Latest source: Local Git/i);
+    const badge = screen.getByTitle(/Freshest source: Local Git/i);
     expect(badge).toBeInTheDocument();
   });
 });

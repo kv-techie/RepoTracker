@@ -1,25 +1,24 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
 
 import type { AgentConfigUpdate } from '@/types/agent';
 import { getAgentConfig, updateAgentConfig } from '@/lib/agent';
+import Icon from '@/components/Icon';
 
 export default function SettingsPage() {
-  const { status } = useSession();
-  const router = useRouter();
 
   const [folders, setFolders] = useState('');
   const [scanInterval, setScanInterval] = useState(300);
   const [staleDays, setStaleDays] = useState(30);
   const [deadDays, setDeadDays] = useState(90);
+  const [autoFetch, setAutoFetch] = useState(false);
+  const [fetchInterval, setFetchInterval] = useState(60);
 
-  const [githubPat, setGithubPat] = useState('');
   const [geminiKey, setGeminiKey] = useState('');
   const [aiMode, setAiMode] = useState<'auto'|'ollama'|'gemini'|'disabled'>('auto');
   const [geminiKeySet, setGeminiKeySet] = useState(false);
+  const [geminiModel, setGeminiModel] = useState('gemini-2.5-flash');
   const [providerStatus, setProviderStatus] = useState<any>(null);
   const [aiStats, setAiStats] = useState<{ollama_requests: number, gemini_requests: number} | null>(null);
   
@@ -38,18 +37,17 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (status === 'unauthenticated') router.push('/login');
-  }, [status, router]);
-
-  useEffect(() => {
     getAgentConfig().then(cfg => {
       if (!cfg) { setAgentOffline(true); return; }
       setFolders(cfg.watched_folders.join('\n'));
       setScanInterval(cfg.scan_interval_seconds);
       setStaleDays(cfg.stale_threshold_days);
       setDeadDays(cfg.dead_threshold_days);
+      setAutoFetch(cfg.auto_fetch ?? false);
+      setFetchInterval(cfg.fetch_interval_minutes ?? 60);
       setAiMode(cfg.ai_mode || 'auto');
       setGeminiKeySet(cfg.gemini_key_set || false);
+      if (cfg.gemini_model) setGeminiModel(cfg.gemini_model);
     });
   }, []);
 
@@ -60,10 +58,12 @@ export default function SettingsPage() {
       scan_interval_seconds: scanInterval,
       stale_threshold_days: staleDays,
       dead_threshold_days: deadDays,
+      auto_fetch: autoFetch,
+      fetch_interval_minutes: fetchInterval,
       ai_enabled: aiMode !== 'disabled',
       ai_mode: aiMode,
+      gemini_model: geminiModel,
     };
-    if (githubPat) updates.github_pat = githubPat;
     if (geminiKey) updates.gemini_api_key = geminiKey;
 
     const result = await updateAgentConfig(updates);
@@ -87,10 +87,10 @@ export default function SettingsPage() {
   return (
     <div className="settings-page">
       {/* Page header — mirrors Dashboard */}
-      <div className="settings-header">
-        <div>
-          <h1 className="dashboard-title">Settings</h1>
-          <p className="dashboard-sub">Configure your local agent and preferences</p>
+      <header className="page-head settings-header">
+        <div className="page-head-text">
+          <h1 className="page-head-title">Settings</h1>
+          <p className="page-head-sub">Configure the local agent, thresholds and AI routing</p>
         </div>
 
         <button
@@ -105,17 +105,17 @@ export default function SettingsPage() {
               Saving…
             </>
           ) : saved ? (
-            <>✓ Saved!</>
+            <><Icon name="check" size={15} /> Saved</>
           ) : (
             'Save Settings'
           )}
         </button>
-      </div>
+      </header>
 
       {/* Agent offline banner */}
       {agentOffline && (
         <div className="settings-banner settings-banner--warn" role="alert">
-          <span className="settings-banner-icon">⚠️</span>
+          <span className="settings-banner-icon"><Icon name="alert" size={16} /></span>
           <div>
             <strong>Agent is offline.</strong> Settings cannot be saved until the agent is running.
             Start it with <code>python agent/main.py</code>
@@ -126,7 +126,7 @@ export default function SettingsPage() {
       {/* Save-error banner */}
       {saveError && (
         <div className="settings-banner settings-banner--error" role="alert">
-          <span className="settings-banner-icon">✕</span>
+          <span className="settings-banner-icon"><Icon name="alert" size={16} /></span>
           <div>{saveError}</div>
         </div>
       )}
@@ -137,7 +137,7 @@ export default function SettingsPage() {
         {/* ── Watched Folders ── */}
         <section className="settings-card settings-card--wide">
           <div className="settings-card-header">
-            <div className="settings-card-icon">📁</div>
+            <div className="settings-card-icon"><Icon name="folder" size={18} /></div>
             <div>
               <h2 className="settings-card-title">Watched Folders</h2>
               <p className="settings-card-desc">
@@ -162,7 +162,7 @@ export default function SettingsPage() {
         {/* ── Scan Settings ── */}
         <section className="settings-card">
           <div className="settings-card-header">
-            <div className="settings-card-icon">⚙️</div>
+            <div className="settings-card-icon"><Icon name="sliders" size={18} /></div>
             <div>
               <h2 className="settings-card-title">Scan Settings</h2>
               <p className="settings-card-desc">Control how often and when repos are analysed.</p>
@@ -212,44 +212,65 @@ export default function SettingsPage() {
                 min={30} max={730}
               />
             </div>
+            <div className="settings-field">
+              <label htmlFor="auto-fetch" className="settings-label">
+                <input
+                  id="auto-fetch"
+                  type="checkbox"
+                  checked={autoFetch}
+                  onChange={e => setAutoFetch(e.target.checked)}
+                  style={{ marginRight: 8 }}
+                />
+                Fetch remotes in the background
+                <span className="settings-label-hint">off by default</span>
+              </label>
+              <p className="settings-hint">
+                Runs <code>git fetch</code> for each repo&apos;s upstream so ahead/behind counts stay current.
+                Skipped when offline.
+              </p>
+            </div>
+            {autoFetch && (
+              <div className="settings-field">
+                <label htmlFor="fetch-interval" className="settings-label">
+                  Fetch at most every
+                  <span className="settings-label-hint">minutes, per repo</span>
+                </label>
+                <input
+                  id="fetch-interval"
+                  type="number"
+                  className="settings-input"
+                  value={fetchInterval}
+                  onChange={e => setFetchInterval(Number(e.target.value))}
+                  min={5} max={1440}
+                />
+              </div>
+            )}
           </div>
         </section>
 
         {/* ── Security ── */}
         <section className="settings-card">
           <div className="settings-card-header">
-            <div className="settings-card-icon">🔒</div>
+            <div className="settings-card-icon"><Icon name="lock" size={18} /></div>
             <div>
               <h2 className="settings-card-title">Security</h2>
               <p className="settings-card-desc">
-                Tokens are stored encrypted in the local agent SQLite. Never exposed to the browser.
+                The agent generates its own API token on first start and stores it in{' '}
+                <code>agent/.env</code>, which git ignores. The Next.js server attaches it; the
+                browser never sees it.
               </p>
             </div>
           </div>
-
-          <div className="settings-fields">
-            <div className="settings-field">
-              <label htmlFor="github-pat" className="settings-label">
-                GitHub PAT
-                <span className="settings-label-hint">leave blank to keep current</span>
-              </label>
-              <input
-                id="github-pat"
-                type="password"
-                className="settings-input"
-                value={githubPat}
-                onChange={e => setGithubPat(e.target.value)}
-                placeholder="ghp_••••••••••••"
-                autoComplete="off"
-              />
-            </div>
-          </div>
+          <p className="settings-hint">
+            Signed-in GitHub access uses your OAuth session. A personal access token is not used
+            yet: the agent makes no GitHub requests of its own.
+          </p>
         </section>
 
         {/* ── Adaptive AI Routing ── */}
         <section className="settings-card">
           <div className="settings-card-header">
-            <div className="settings-card-icon">🤖</div>
+            <div className="settings-card-icon"><Icon name="cpu" size={18} /></div>
             <div>
               <h2 className="settings-card-title">Adaptive AI Routing™</h2>
               <p className="settings-card-desc">
@@ -305,13 +326,32 @@ export default function SettingsPage() {
               </div>
             )}
             
+            {(aiMode === 'auto' || aiMode === 'gemini') && (
+              <div className="settings-field">
+                <label htmlFor="gemini-model" className="settings-label">
+                  Gemini model
+                  <span className="settings-label-hint">model id</span>
+                </label>
+                <input
+                  id="gemini-model"
+                  type="text"
+                  className="settings-input"
+                  value={geminiModel}
+                  onChange={e => setGeminiModel(e.target.value)}
+                  placeholder="gemini-2.5-flash"
+                />
+              </div>
+            )}
+
             {providerStatus && (
               <div className="settings-field" style={{ marginTop: 24, padding: 16, backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
                 <label className="settings-label" style={{ marginBottom: 12 }}>AI Provider Status</label>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 14 }}>
                   <span style={{ color: 'var(--gray-400)' }}>Gemini (Cloud):</span>
                   <span style={{ fontWeight: 500, color: providerStatus.gemini.configured ? 'var(--green-400)' : 'var(--gray-500)' }}>
-                    {providerStatus.gemini.configured ? '✓ Configured' : 'Missing Key'}
+                    {providerStatus.gemini.configured
+                      ? `✓ ${providerStatus.gemini.model} answering`
+                      : providerStatus.gemini.key_set ? `Not usable: ${providerStatus.gemini.detail}` : 'Missing Key'}
                   </span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 14 }}>

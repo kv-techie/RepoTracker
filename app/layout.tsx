@@ -31,7 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <main className="main-container">
             {children}
           </main>
-          <AgentationWrapper />
+          {process.env.NODE_ENV === 'development' && <AgentationWrapper />}
         </Providers>
       </body>
     </html>

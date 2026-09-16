@@ -5,6 +5,7 @@
 
 import type { TrackedRepo, FilterTag } from '@/types/repo';
 import type { AgentStatus, AgentConfig, AgentConfigUpdate, AiQueryResponse, WeeklySummaryResponse } from '@/types/agent';
+import { githubSlug } from '@/lib/utils';
 
 const BASE = '/api/agent';
 
@@ -20,7 +21,7 @@ async function safeFetch<T>(url: string, init?: RequestInit): Promise<T | null> 
 
 export async function getAgentStatus(): Promise<AgentStatus> {
   const data = await safeFetch<AgentStatus>(`${BASE}/status`);
-  return data ?? { online: false, version: '—', watching_folders: [], db_path: '', repo_count: 0, ai_enabled: false };
+  return data ?? { online: false, version: '—', watching_folder_count: 0, repo_count: 0, ai_enabled: false };
 }
 
 export async function getLocalRepos(tag?: string, collection?: string): Promise<TrackedRepo[]> {
@@ -30,8 +31,20 @@ export async function getLocalRepos(tag?: string, collection?: string): Promise<
   return (await safeFetch<TrackedRepo[]>(`${BASE}/repos?${params}`)) ?? [];
 }
 
-export async function getRepoHealth(repoId: string) {
-  return safeFetch(`${BASE}/health/${repoId}`);
+export async function updateRepoUserState(
+  repoId: string,
+  update: { collection?: string | null; deployed?: boolean },
+): Promise<TrackedRepo | null> {
+  const body: Record<string, unknown> = {};
+  if (update.collection === null) body.clear_collection = true;
+  else if (update.collection !== undefined) body.collection = update.collection;
+  if (update.deployed !== undefined) body.deployed = update.deployed;
+
+  return safeFetch<TrackedRepo>(`${BASE}/repos/${repoId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
 }
 
 export async function triggerScan(): Promise<{ message: string } | null> {
@@ -51,12 +64,24 @@ export async function updateAgentConfig(updates: AgentConfigUpdate): Promise<Age
 }
 
 export async function getWeeklySummary(): Promise<WeeklySummaryResponse> {
-  return (await safeFetch<WeeklySummaryResponse>('/api/agent/ai/summary')) ??
+  return (await safeFetch<WeeklySummaryResponse>(`${BASE}/ai/summary`)) ??
     { summary: '', ai_enabled: false };
 }
 
+/** Commit timestamps across every tracked repo, de-duplicated by the agent. */
+export async function getCommitTimes(years?: number): Promise<string[]> {
+  const query = years ? `?years=${years}` : '';
+  const data = await safeFetch<{ commits: string[] }>(`${BASE}/insights/commits${query}`);
+  return data?.commits ?? [];
+}
+
+/** Explainable health for one repo, with history and what changed. */
+export async function getRepoHealthDetail(repoId: string) {
+  return safeFetch<{ changes: string[] }>(`${BASE}/health/${repoId}`);
+}
+
 export async function askRepo(question: string): Promise<AiQueryResponse> {
-  return (await safeFetch<AiQueryResponse>('/api/agent/ai/query', {
+  return (await safeFetch<AiQueryResponse>(`${BASE}/ai/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ question }),
@@ -90,7 +115,9 @@ export async function getHybridRepos(): Promise<TrackedRepo[]> {
 
   if (Array.isArray(githubReposRaw)) {
     for (const gh of githubReposRaw) {
-      const existing = merged.find(r => r.name === gh.name || r.remote_url === gh.clone_url);
+      // Match on owner/repo only: bare names collide, and SSH vs HTTPS remotes never compare equal
+      const ghSlug = String(gh.full_name ?? '').toLowerCase();
+      const existing = merged.find(r => githubSlug(r.remote_url) === ghSlug);
       if (existing) {
         // Enrich locally-tracked repo with GitHub metadata
         existing.github_stars = gh.stargazers_count;

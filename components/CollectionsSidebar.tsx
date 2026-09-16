@@ -90,8 +90,9 @@ export default function CollectionsSidebar({ collections, activeId, onSelect, on
             All repos
           </button>
         </li>
+        {/* Row and delete button are siblings: a button inside a button breaks hydration */}
         {collections.map(col => (
-          <li key={col.id}>
+          <li key={col.id} className="collection-row">
             <button
               className={`collection-item ${activeId === col.id ? 'collection-item--active' : ''}`}
               onClick={() => onSelect(col.id)}
@@ -99,13 +100,13 @@ export default function CollectionsSidebar({ collections, activeId, onSelect, on
             >
               <span className="col-dot" style={{ background: col.color }} />
               {col.name}
-              <button
-                className="col-delete-btn"
-                onClick={e => { e.stopPropagation(); handleDelete(col.id); }}
-                aria-label={`Delete ${col.name}`}
-              >
-                ×
-              </button>
+            </button>
+            <button
+              className="col-delete-btn"
+              onClick={() => handleDelete(col.id)}
+              aria-label={`Delete ${col.name}`}
+            >
+              ×
             </button>
           </li>
         ))}

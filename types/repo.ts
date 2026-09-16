@@ -2,7 +2,7 @@
 
 export type LatestSource = 'local_filesystem' | 'local_git' | 'github_remote';
 export type SourceType = 'local_only' | 'github' | 'hybrid';
-export type FilterTag = 'active' | 'stale' | 'unpushed' | 'local_only' | 'broken' | 'deployed';
+export type FilterTag = 'active' | 'stale' | 'unpushed' | 'local_only' | 'broken' | 'deployed' | 'missing';
 
 export interface SyncStatus {
   local_ahead_by: number;
@@ -10,12 +10,12 @@ export interface SyncStatus {
   is_diverged: boolean;
   uncommitted_changes: number;
   has_stash: boolean;
+  upstream?: string | null;
 }
 
 export interface Repo {
   id: string;
   name: string;
-  local_path?: string;
   remote_url?: string;
   source_type: SourceType;
   latest_source: LatestSource;

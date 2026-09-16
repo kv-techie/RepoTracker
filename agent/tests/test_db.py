@@ -7,9 +7,9 @@ from datetime import datetime, timezone
 from agent.db import (
     upsert_repo, get_all_repos, get_repo,
     insert_commits, get_commits,
-    insert_file_event, record_scan, get_last_scan,
+    record_scan, get_last_scan,
 )
-from agent.models import RepoRecord, CommitRecord, FileEvent, ScanResult, SyncStatus
+from agent.models import RepoRecord, CommitRecord, ScanResult, SyncStatus
 
 
 def _make_repo(rid: str = "abc123", name: str = "test-repo") -> RepoRecord:
@@ -93,19 +93,6 @@ class TestCommits:
         await insert_commits(tmp_db, [])  # should not raise
 
 
-class TestFileEvents:
-    @pytest.mark.asyncio
-    async def test_insert_file_event(self, tmp_db):
-        repo = _make_repo()
-        await upsert_repo(tmp_db, repo)
-        event = FileEvent(
-            file_path="src/main.py",
-            event_type="modified",
-            occurred_at=datetime.now(timezone.utc),
-            repo_id=repo.id,
-        )
-        await insert_file_event(tmp_db, event)  # should not raise
-
 
 class TestScanHistory:
     @pytest.mark.asyncio
@@ -124,3 +111,60 @@ class TestScanHistory:
     async def test_last_scan_returns_none_when_empty(self, tmp_db):
         result = await get_last_scan(tmp_db)
         assert result is None
+
+
+class TestReconcileMissingRepos:
+    @pytest.mark.asyncio
+    async def test_unseen_recent_repo_marked_missing(self, tmp_db):
+        from datetime import datetime, timezone
+        from agent.db import upsert_repo, get_repo, reconcile_missing_repos
+        from agent.models import RepoRecord
+
+        now = datetime.now(timezone.utc).isoformat()
+        await upsert_repo(tmp_db, RepoRecord(id="gone", name="gone", tags=["stale"], created_at=now, updated_at=now))
+        await upsert_repo(tmp_db, RepoRecord(id="here", name="here", tags=["active"], created_at=now, updated_at=now))
+
+        marked, deleted = await reconcile_missing_repos(tmp_db, {"here"})
+
+        assert (marked, deleted) == (1, 0)
+        assert (await get_repo(tmp_db, "gone")).tags == ["missing"]
+        assert (await get_repo(tmp_db, "here")).tags == ["active"]
+
+    @pytest.mark.asyncio
+    async def test_unseen_repo_past_grace_deleted(self, tmp_db):
+        from datetime import datetime, timedelta, timezone
+        from agent.db import upsert_repo, get_repo, reconcile_missing_repos
+        from agent.models import RepoRecord
+
+        import aiosqlite
+
+        old = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        await upsert_repo(tmp_db, RepoRecord(id="old", name="old", created_at=old, updated_at=old))
+        # upsert stamps updated_at with "now" (last seen); backdate it to simulate a long absence
+        async with aiosqlite.connect(tmp_db) as db:
+            await db.execute("UPDATE repos SET updated_at=? WHERE id='old'", (old,))
+            await db.commit()
+
+        marked, deleted = await reconcile_missing_repos(tmp_db, set(), grace_days=7)
+
+        assert (marked, deleted) == (0, 1)
+        assert await get_repo(tmp_db, "old") is None
+
+
+class TestCommitCountsSince:
+    @pytest.mark.asyncio
+    async def test_counts_only_recent_commits(self, tmp_db):
+        from datetime import timedelta
+        from agent.db import get_commit_counts_since
+
+        now = datetime.now(timezone.utc)
+        await upsert_repo(tmp_db, RepoRecord(id="r1", name="r1", created_at=now.isoformat(), updated_at=now.isoformat()))
+        await insert_commits(tmp_db, [
+            CommitRecord(sha="a", message="new", author="x", committed_at=now - timedelta(days=1), repo_id="r1"),
+            CommitRecord(sha="b", message="new", author="x", committed_at=now - timedelta(days=3), repo_id="r1"),
+            CommitRecord(sha="c", message="old", author="x", committed_at=now - timedelta(days=20), repo_id="r1"),
+        ])
+
+        counts = await get_commit_counts_since(tmp_db, now - timedelta(days=7))
+
+        assert counts == {"r1": 2}

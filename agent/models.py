@@ -4,9 +4,10 @@ These mirror the TypeScript types in types/repo.ts and types/agent.ts.
 """
 
 from __future__ import annotations
+import os
 from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel, Field
+from typing import Literal, Optional
+from pydantic import BaseModel, Field, field_validator
 
 
 # ---------------------------------------------------------------------------
@@ -26,6 +27,7 @@ class SyncStatus(BaseModel):
     is_diverged: bool = False
     uncommitted_changes: int = 0
     has_stash: bool = False
+    upstream: Optional[str] = None  # e.g. "origin/main"; None when the branch tracks nothing
 
 
 # ---------------------------------------------------------------------------
@@ -37,6 +39,7 @@ class HealthBreakdown(BaseModel):
     base_score: int = 50
     commit_recency_bonus: int = 0
     readme_bonus: int = 0
+    clean_branches_bonus: int = 0
     stale_branch_penalty: int = 0
     uncommitted_penalty: int = 0
     no_activity_penalty: int = 0
@@ -89,6 +92,7 @@ class FileEvent(BaseModel):
     event_type: str  # "modified" | "created" | "deleted"
     occurred_at: datetime
     repo_id: str
+    repo_root: Optional[str] = Field(default=None, exclude=True)  # internal: which repo to rescan
 
 
 class LargeFile(BaseModel):
@@ -104,6 +108,12 @@ class HotspotFile(BaseModel):
 
 
 class FileIntelligence(BaseModel):
+    """File-level analytics. ``total_tokens`` is an estimate of how much of this repo
+    a model would have to read: tracked source files only, no lockfiles or build output."""
+    has_tests: bool = False
+    test_file_count: int = 0
+    context_file_count: int = 0  # files counted toward total_tokens
+    structure_signals: list[str] = Field(default_factory=list)
     total_files: int = 0
     total_lines: int = 0
     total_tokens: int = 0
@@ -117,12 +127,18 @@ class FileIntelligence(BaseModel):
 # ---------------------------------------------------------------------------
 
 class ReadmeScore(BaseModel):
+    """What a README actually contains, read from the document rather than its outline."""
     score: int = Field(ge=0, le=100)
     has_readme: bool
     has_description: bool
     has_installation: bool
     has_usage: bool
     has_license: bool
+    has_code_examples: bool = False
+    has_screenshots: bool = False
+    word_count: int = 0
+    code_block_count: int = 0
+    evidence: list[str] = Field(default_factory=list)  # why each section counted
     missing_sections: list[str] = Field(default_factory=list)
     badge_suggestions: list[str] = Field(default_factory=list)
 
@@ -134,7 +150,8 @@ class ReadmeScore(BaseModel):
 class RepoRecord(BaseModel):
     id: str
     name: str
-    local_path: Optional[str] = None
+    # Internal only: excluded from API responses so filesystem paths never reach the browser
+    local_path: Optional[str] = Field(default=None, exclude=True)
     remote_url: Optional[str] = None
     source_type: SourceType = "local_only"
     latest_source: LatestSource = "local_filesystem"
@@ -183,8 +200,10 @@ class AgentStatus(BaseModel):
     online: bool = True
     version: str = "1.0.0"
     last_scan: Optional[datetime] = None
-    watching_folders: list[str] = Field(default_factory=list)
-    db_path: str = ""
+    # Paths are internal only; the API exposes just the count
+    watching_folders: list[str] = Field(default_factory=list, exclude=True)
+    db_path: str = Field(default="", exclude=True)
+    watching_folder_count: int = 0
     repo_count: int = 0
     ai_enabled: bool = False
 
@@ -193,13 +212,32 @@ class AgentStatus(BaseModel):
 # Config update request
 # ---------------------------------------------------------------------------
 
+class RepoUserUpdate(BaseModel):
+    """Choices the user makes about a repo, kept across rescans."""
+    collection: Optional[str] = None
+    clear_collection: bool = False
+    deployed: Optional[bool] = None
+
+
 class ConfigUpdateRequest(BaseModel):
     watched_folders: Optional[list[str]] = None
-    scan_interval_seconds: Optional[int] = None
-    github_pat: Optional[str] = None
+    scan_interval_seconds: Optional[int] = Field(default=None, ge=30)
     ai_enabled: Optional[bool] = None
-    ai_mode: Optional[str] = None
+    ai_mode: Optional[Literal["auto", "ollama", "gemini", "disabled"]] = None
     gemini_api_key: Optional[str] = None
     ollama_model: Optional[str] = None
-    stale_threshold_days: Optional[int] = None
-    dead_threshold_days: Optional[int] = None
+    gemini_model: Optional[str] = None
+    stale_threshold_days: Optional[int] = Field(default=None, ge=1)
+    dead_threshold_days: Optional[int] = Field(default=None, ge=1)
+    auto_fetch: Optional[bool] = None
+    fetch_interval_minutes: Optional[int] = Field(default=None, ge=5)
+
+    @field_validator("watched_folders")
+    @classmethod
+    def folders_must_exist(cls, v: Optional[list[str]]) -> Optional[list[str]]:
+        if v is None:
+            return v
+        missing = [f for f in v if not os.path.isdir(f)]
+        if missing:
+            raise ValueError(f"Not an existing folder: {', '.join(missing)}")
+        return v

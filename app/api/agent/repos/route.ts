@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-const AGENT_BASE = process.env.AGENT_BASE_URL ?? 'http://127.0.0.1:8001';
+import { agentFetch } from '@/lib/agentProxy';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -12,9 +11,7 @@ export async function GET(req: NextRequest) {
   if (collection) params.set('collection', collection);
 
   try {
-    const res = await fetch(`${AGENT_BASE}/repos?${params}`, {
-      cache: 'no-store',
-    });
+    const res = await agentFetch(`/repos?${params}`);
     if (!res.ok) throw new Error(`Agent returned ${res.status}`);
     return NextResponse.json(await res.json());
   } catch {

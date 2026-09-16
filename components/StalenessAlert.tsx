@@ -1,32 +1,50 @@
 'use client';
 
-import type { StalenessInfo } from '@/types/metrics';
+import Link from 'next/link';
+import type { TrackedRepo } from '@/types/repo';
+import Icon from './Icon';
 
 interface Props {
-  staleness: StalenessInfo;
-  repoName: string;
+  repos: TrackedRepo[];
 }
 
-export default function StalenessAlert({ staleness, repoName }: Props) {
-  if (staleness.risk === 'low') return null;
+/**
+ * One compact line for everything at risk, instead of a card per repo.
+ * The dashboard already lists each repo; this is the "what needs attention" summary.
+ */
+export default function StalenessAlert({ repos }: Props) {
+  if (repos.length === 0) return null;
 
-  const icon = { moderate: '⚠️', high: '🔶', critical: '🔴' }[staleness.risk] ?? '⚠️';
+  const critical = repos.filter(r => r.staleness?.risk === 'critical');
+  const worst = [...repos].sort(
+    (a, b) => (b.staleness?.days_since_activity ?? 0) - (a.staleness?.days_since_activity ?? 0),
+  );
+  const shown = worst.slice(0, 3);
 
   return (
     <div
-      className={`staleness-alert staleness-${staleness.risk}`}
-      role="alert"
+      className={`attention-bar${critical.length ? ' attention-bar--critical' : ''}`}
+      role="status"
+      aria-label="Repositories that need attention"
     >
-      <span className="staleness-icon">{icon}</span>
-      <div className="staleness-body">
-        <strong className="staleness-name">{repoName}</strong>
-        <p className="staleness-message">{staleness.message}</p>
-        {staleness.days_until_dead > 0 && staleness.risk === 'high' && (
-          <p className="staleness-countdown">
-            ⏳ Going dead in {staleness.days_until_dead} day{staleness.days_until_dead !== 1 ? 's' : ''} if no action.
-          </p>
+      <Icon name="alert" size={16} />
+      <p className="attention-text">
+        <strong>{repos.length} repo{repos.length !== 1 ? 's' : ''}</strong> need attention
+        {critical.length > 0 && ` · ${critical.length} may be abandoned`}
+      </p>
+      <ul className="attention-list">
+        {shown.map(repo => (
+          <li key={repo.id}>
+            <Link href={`/repos/${repo.id}`} className="attention-link">
+              {repo.name}
+              <span className="attention-days">{repo.staleness?.days_since_activity}d</span>
+            </Link>
+          </li>
+        ))}
+        {repos.length > shown.length && (
+          <li className="attention-more">+{repos.length - shown.length} more</li>
         )}
-      </div>
+      </ul>
     </div>
   );
 }

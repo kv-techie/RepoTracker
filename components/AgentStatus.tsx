@@ -40,7 +40,7 @@ export default function AgentStatusBar({ status, onScan }: Props) {
           </span>
           <span className="agent-sep">·</span>
           <span className="agent-watching">
-            {status.watching_folders.length} folder{status.watching_folders.length !== 1 ? 's' : ''} watched
+            {status.watching_folder_count} folder{status.watching_folder_count !== 1 ? 's' : ''} watched
           </span>
         </div>
       )}

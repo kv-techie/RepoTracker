@@ -5,13 +5,13 @@ Black-box scoring is forbidden.
 
 Health Score (0–100):
   Base: 50 pts
-  +20  committed in last 3 days
+  +20  committed in last 3 days (or marked deployed: shipped and stable)
   +10  committed in last 7 days (non-overlapping)
   +10  has README
   +10  no stale branches (none > 30 days inactive)
   -10  per stale branch (max -30)
   -10  uncommitted changes > 5 files
-  -10  uncommitted changes > 20 files (stacked)
+  -20  uncommitted changes > 20 files (replaces the -10)
   -15  last commit 30–90 days ago
   -25  last commit > 90 days ago
   Clamped to [0, 100].
@@ -73,16 +73,26 @@ def compute_health(
     uncommitted_changes: int,
     has_readme: bool,
     stale_branch_count: int,
+    deployed: bool = False,
 ) -> HealthScore:
-    """Compute explainable health score."""
+    """Compute explainable health score.
+
+    A repo the user marked as deployed is finished on purpose, so the inactivity
+    penalty does not apply to it. Everything else (README, branches, uncommitted
+    work) still counts, because those remain real problems in a shipped project.
+    """
     base = 50
     reasons: list[str] = []
     breakdown = HealthBreakdown(base_score=base)
 
     days = _days_ago(_parse_ts(latest_activity_iso))
 
-    # Commit recency bonus
-    if days is not None:
+    # Commit recency bonus. A deployed repo earns the same points for being stable,
+    # otherwise shipping a project could only ever lower its score.
+    if deployed:
+        breakdown.commit_recency_bonus = 20
+        reasons.append("Marked deployed — shipped and stable (+20)")
+    elif days is not None:
         if days <= 3:
             breakdown.commit_recency_bonus = 20
             reasons.append("Active commit in last 3 days (+20)")
@@ -97,9 +107,12 @@ def compute_health(
     else:
         reasons.append("No README found (missed +10)")
 
-    # Stale branch penalty
+    # Branch hygiene: bonus when clean, penalty per stale branch
     stale_penalty = min(stale_branch_count * 10, 30)
-    if stale_branch_count > 0:
+    if stale_branch_count == 0:
+        breakdown.clean_branches_bonus = 10
+        reasons.append("No stale branches (+10)")
+    else:
         breakdown.stale_branch_penalty = -stale_penalty
         reasons.append(f"{stale_branch_count} stale branch(es) (−{stale_penalty})")
 
@@ -115,7 +128,9 @@ def compute_health(
 
     # Inactivity penalty
     inactivity_penalty = 0
-    if days is not None:
+    if deployed:
+        reasons.append("Marked deployed — inactivity is not penalised")
+    elif days is not None:
         if days > 90:
             inactivity_penalty = 25
             reasons.append(f"No activity for {int(days)} days (−25)")
@@ -131,6 +146,7 @@ def compute_health(
         base
         + breakdown.commit_recency_bonus
         + breakdown.readme_bonus
+        + breakdown.clean_branches_bonus
         + breakdown.stale_branch_penalty
         + breakdown.uncommitted_penalty
         + breakdown.no_activity_penalty
@@ -148,8 +164,18 @@ def compute_health(
 def compute_momentum(
     commits_last_4w: int,
     commits_prev_4w: int,
+    deployed: bool = False,
 ) -> MomentumScore:
     """Growing / stable / declining based on commit volume shift."""
+    if deployed:
+        return MomentumScore(
+            level="stable",
+            commit_count_last_4w=commits_last_4w,
+            commit_count_prev_4w=commits_prev_4w,
+            change_pct=0.0,
+            reason="Marked deployed — momentum tracking is off for this repo.",
+        )
+
     if commits_prev_4w == 0:
         if commits_last_4w == 0:
             change_pct = 0.0
@@ -184,9 +210,20 @@ def compute_staleness(
     latest_activity_iso: Optional[str],
     stale_threshold_days: int = 30,
     dead_threshold_days: int = 90,
+    deployed: bool = False,
 ) -> StalenessInfo:
-    """How close is this repo to dying?"""
+    """How close is this repo to dying? Deployed repos are exempt."""
     days = _days_ago(_parse_ts(latest_activity_iso))
+
+    if deployed:
+        days_int = int(days) if days is not None else 0
+        return StalenessInfo(
+            risk="low",
+            days_since_activity=days_int,
+            days_until_stale=stale_threshold_days,
+            days_until_dead=dead_threshold_days,
+            message=f"Marked deployed. Staleness tracking is off (last change {days_int} days ago).",
+        )
 
     if days is None:
         return StalenessInfo(

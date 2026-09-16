@@ -1,0 +1,35 @@
+#!/bin/sh
+# Blocks commits that contain secrets or local-only config.
+# Enable with: git config core.hooksPath .githooks
+# Skip once (only when you are sure): git commit --no-verify
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$staged" ] && exit 0
+
+blocked=""
+for file in $staged; do
+  case "$file" in
+    agent/config.json|agent/.env|.env.local|.env)
+      blocked="$blocked
+  $file is local-only and must stay untracked"
+      ;;
+  esac
+done
+
+# Google API key, GitHub tokens, private keys, AWS access key ids
+patterns='AIza[0-9A-Za-z_-]{35}|ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}'
+
+# Added lines only, skipping the +++ file headers
+hits=$(git diff --cached -U0 | grep '^+' | grep -v '^+++' | grep -E "$patterns" | head -5)
+if [ -n "$hits" ]; then
+  blocked="$blocked
+  a secret-looking value is being added:
+$hits"
+fi
+
+if [ -n "$blocked" ]; then
+  printf 'Commit blocked by .githooks/pre-commit:%s\n' "$blocked"
+  printf '\nRotate anything real that leaked, then unstage it.\n'
+  exit 1
+fi
+exit 0

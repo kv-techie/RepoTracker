@@ -1,0 +1,10 @@
+{
+  "watched_folders": ["C:/Users/you/projects"],
+  "scan_interval_seconds": 300,
+  "agent_port": 8001,
+  "ai_enabled": true,
+  "ai_mode": "auto",
+  "ollama_model": "llama3",
+  "stale_threshold_days": 30,
+  "dead_threshold_days": 90
+}

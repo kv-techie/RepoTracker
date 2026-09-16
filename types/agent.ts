@@ -4,8 +4,7 @@ export interface AgentStatus {
   online: boolean;
   version: string;
   last_scan?: string;
-  watching_folders: string[];
-  db_path: string;
+  watching_folder_count: number;
   repo_count: number;
   ai_enabled: boolean;
 }
@@ -21,13 +20,15 @@ export interface AgentConfig {
   scan_interval_seconds: number;
   stale_threshold_days: number;
   dead_threshold_days: number;
-  github_pat?: string;
   ai_enabled: boolean;
   ai_mode: 'auto' | 'ollama' | 'gemini' | 'disabled';
   gemini_api_key?: string;
   gemini_key_set?: boolean;
   ollama_model?: string;
+  gemini_model?: string;
   agent_port: number;
+  auto_fetch?: boolean;
+  fetch_interval_minutes?: number;
 }
 
 export interface AgentConfigUpdate {
@@ -35,11 +36,13 @@ export interface AgentConfigUpdate {
   scan_interval_seconds?: number;
   stale_threshold_days?: number;
   dead_threshold_days?: number;
-  github_pat?: string;
   ai_enabled?: boolean;
   ai_mode?: 'auto' | 'ollama' | 'gemini' | 'disabled';
   gemini_api_key?: string;
   ollama_model?: string;
+  gemini_model?: string;
+  auto_fetch?: boolean;
+  fetch_interval_minutes?: number;
 }
 
 export interface FileEvent {

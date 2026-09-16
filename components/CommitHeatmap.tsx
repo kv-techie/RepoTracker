@@ -1,6 +1,7 @@
 'use client';
 
 import type { Commit } from '@/types/repo';
+import { localDayKey, parseDayKey } from '@/lib/commitDates';
 
 interface Props {
   commits: Commit[];
@@ -13,8 +14,10 @@ type DayMap = Record<string, number>;
 function buildDayMap(commits: Commit[], year: number): DayMap {
   const map: DayMap = {};
   for (const c of commits) {
-    if (!c.committed_at || new Date(c.committed_at).getFullYear() !== year) continue;
-    const day = c.committed_at.slice(0, 10);
+    if (!c.committed_at) continue;
+    const when = new Date(c.committed_at);
+    if (when.getFullYear() !== year) continue;
+    const day = localDayKey(when);
     map[day] = (map[day] ?? 0) + 1;
   }
   return map;
@@ -29,7 +32,7 @@ function getYearWeeks(year: number): string[] {
   end.setDate(end.getDate() + (6 - end.getDay())); // align to Saturday
   const cur = new Date(start);
   while (cur <= end) {
-    days.push(cur.toISOString().slice(0, 10));
+    days.push(localDayKey(cur));
     cur.setDate(cur.getDate() + 1);
   }
   return days;
@@ -59,7 +62,7 @@ export default function CommitHeatmap({ commits, selectedYear, onYearChange }: P
   const monthLabels: Array<{ col: number; label: string }> = [];
   let lastMonth = -1;
   weeks.forEach((week, wi) => {
-    const d = new Date(week[0]);
+    const d = parseDayKey(week[0]);
     if (d.getFullYear() !== selectedYear) return;
     const month = d.getMonth();
     if (month !== lastMonth) {

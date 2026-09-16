@@ -15,6 +15,7 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 from agent.models import FileEvent
+from agent.scanner import SKIP_DIRS, SKIP_SUFFIXES
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +46,9 @@ class RepoChangeHandler(FileSystemEventHandler):
         self._loop = loop
 
     def _skip(self, src_path: str) -> bool:
-        skip_dirs = {".git", "node_modules", "__pycache__", ".next", ".venv", "dist", "build"}
-        parts = Path(src_path).parts
-        return any(p in skip_dirs for p in parts)
+        if src_path.lower().endswith(SKIP_SUFFIXES):
+            return True
+        return any(p in SKIP_DIRS for p in Path(src_path).parts)
 
     def _emit(self, event_type: str, src_path: str) -> None:
         if self._skip(src_path):
@@ -60,8 +61,21 @@ class RepoChangeHandler(FileSystemEventHandler):
             event_type=event_type,
             occurred_at=datetime.now(timezone.utc),
             repo_id=_repo_id_from_path(git_root),
+            repo_root=git_root,
         )
-        asyncio.run_coroutine_threadsafe(self._queue.put(event), self._loop)
+        # Hand off to the event loop without blocking watchdog's thread
+        self._loop.call_soon_threadsafe(self._offer, event)
+
+    def _offer(self, event: FileEvent) -> None:
+        """Enqueue, dropping the oldest event when full (e.g. during a large install)."""
+        try:
+            self._queue.put_nowait(event)
+        except asyncio.QueueFull:
+            try:
+                self._queue.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+            self._queue.put_nowait(event)
 
     def on_modified(self, event: FileSystemEvent):
         if not event.is_directory:
@@ -103,8 +117,12 @@ class FileWatcher:
             self._observer.join()
             self._started = False
 
+    async def next_event(self) -> FileEvent:
+        """Wait until an event arrives. The consumer sleeps instead of polling."""
+        return await self._event_queue.get()
+
     async def get_event(self) -> FileEvent | None:
-        """Non-blocking event poll — returns None if queue is empty."""
+        """Non-blocking poll, kept for callers that must not block."""
         try:
             return self._event_queue.get_nowait()
         except asyncio.QueueEmpty:

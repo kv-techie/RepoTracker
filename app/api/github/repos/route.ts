@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserRepos } from '@/lib/github';
+import { getUserRepos, describeGitHubError } from '@/lib/github';
 
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+
+// Reads the request (search params / session), so it can never be prerendered
+export const dynamic = 'force-dynamic';
 
 export async function GET(_request: NextRequest) {
   try {
@@ -17,8 +20,8 @@ export async function GET(_request: NextRequest) {
       return NextResponse.json([]);
     }
     return NextResponse.json(
-      { error: 'Failed to fetch repositories' },
-      { status: 500 }
+      { error: describeGitHubError(error) },
+      { status: 502 }
     );
   }
 }

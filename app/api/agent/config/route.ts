@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-const AGENT_BASE = process.env.AGENT_BASE_URL ?? 'http://127.0.0.1:8001';
+import { agentFetch } from '@/lib/agentProxy';
 
 export async function GET() {
   try {
-    const res = await fetch(`${AGENT_BASE}/config`);
+    const res = await agentFetch(`/config`);
     if (!res.ok) throw new Error(`Agent returned ${res.status}`);
     return NextResponse.json(await res.json());
   } catch {
@@ -15,11 +14,13 @@ export async function GET() {
 export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json();
-    const res = await fetch(`${AGENT_BASE}/config`, {
+    const res = await agentFetch(`/config`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
+    // Pass validation errors (e.g. a folder that does not exist) back to the caller
+    if (res.status === 422) return NextResponse.json(await res.json(), { status: 422 });
     if (!res.ok) throw new Error(`Agent returned ${res.status}`);
     return NextResponse.json(await res.json());
   } catch {

@@ -2,11 +2,12 @@
 
 import type { LatestSource } from '@/types/repo';
 import { formatSource } from '@/lib/resolver';
+import Icon, { type IconName } from './Icon';
 
-const SOURCE_ICONS: Record<LatestSource, string> = {
-  local_filesystem: '💾',
-  local_git: '🌿',
-  github_remote: '☁️',
+const SOURCE_ICONS: Record<LatestSource, IconName> = {
+  local_filesystem: 'drive',
+  local_git: 'activity',
+  github_remote: 'globe',
 };
 
 const SOURCE_CLASSES: Record<LatestSource, string> = {
@@ -20,14 +21,17 @@ interface Props {
   compact?: boolean;
 }
 
+/** Says which of the three sources was freshest for this repo. */
 export default function HybridSourceBadge({ source, compact = false }: Props) {
+  const label = formatSource(source);
+
   return (
     <span
       className={`hybrid-badge ${SOURCE_CLASSES[source] ?? ''}`}
-      title={`Latest source: ${formatSource(source)}`}
+      title={`Freshest source: ${label}`}
     >
-      <span className="badge-icon">{SOURCE_ICONS[source]}</span>
-      {!compact && <span className="badge-label">{formatSource(source)}</span>}
+      <Icon name={SOURCE_ICONS[source] ?? 'drive'} size={13} className="badge-icon" label={compact ? label : undefined} />
+      {!compact && <span className="badge-label">{label}</span>}
     </span>
   );
 }

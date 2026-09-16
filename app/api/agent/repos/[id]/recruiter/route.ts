@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-
-const AGENT_BASE = process.env.AGENT_BASE_URL ?? 'http://127.0.0.1:8001';
+import { agentFetch } from '@/lib/agentProxy';
 
 export async function GET(
   request: Request,
@@ -10,13 +9,10 @@ export async function GET(
     const { id } = await params;
     const { searchParams } = new URL(request.url);
     const skipAi = searchParams.get('skip_ai');
-    const url = new URL(`${AGENT_BASE}/repos/${id}/recruiter`);
-    if (skipAi) url.searchParams.set('skip_ai', skipAi);
-    
-    const res = await fetch(url.toString(), { 
-      // Do not cache this, we want fresh AI output or fresh rule-based evaluation
-      cache: 'no-store' 
-    });
+    const query = skipAi ? `?skip_ai=${encodeURIComponent(skipAi)}` : '';
+    // agentFetch never caches: we want fresh AI output or fresh rule-based evaluation
+    // AI commentary on a local model can take up to a minute
+    const res = await agentFetch(`/repos/${id}/recruiter${query}`, {}, 90_000);
     if (!res.ok) {
       if (res.status === 404) return NextResponse.json({ error: 'Repo not found' }, { status: 404 });
       throw new Error(`Agent returned ${res.status}`);

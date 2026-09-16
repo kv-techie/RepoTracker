@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Repo } from '@/types/repo';
 import Link from 'next/link';
+import { Repo } from '@/types/repo';
 import ProviderBadge from '@/components/ProviderBadge';
 import CustomToggle from '@/components/CustomToggle';
+import Icon from '@/components/Icon';
 
 interface RecruiterData {
   portfolio_score: number;
@@ -12,6 +13,15 @@ interface RecruiterData {
   improvements: string[];
   commentary: string;
   provider: 'ollama' | 'gemini' | 'local';
+}
+
+/** Maps a signal word to its tone. Anything unknown stays neutral. */
+function signalTone(value: string): string {
+  const v = value.toLowerCase();
+  if (v.startsWith('strong') || v === 'good' || v === 'high') return 'ok';
+  if (v.startsWith('solid') || v === 'moderate') return 'warn';
+  if (v.startsWith('early') || v === 'weak' || v === 'low') return 'risk';
+  return 'neutral';
 }
 
 export default function RecruiterLensPage() {
@@ -27,23 +37,21 @@ export default function RecruiterLensPage() {
       .then(res => res.json())
       .then(data => {
         setRepos(data);
-        if (data.length > 0) {
-          setSelectedRepoId(data[0].id);
-        }
+        if (data.length > 0) setSelectedRepoId(data[0].id);
       })
-      .catch(() => setError('Failed to load repositories'));
+      .catch(() => setError('Could not reach the local agent. Start it, then reload this page.'));
   }, []);
 
   useEffect(() => {
     if (!selectedRepoId) return;
-    
+
     setLoading(true);
     setData(null);
     setError('');
 
     fetch(`/api/agent/repos/${selectedRepoId}/recruiter?skip_ai=${!enableAi}`)
       .then(res => {
-        if (!res.ok) throw new Error('Agent failed to evaluate repository');
+        if (!res.ok) throw new Error('The agent could not evaluate this repository.');
         return res.json();
       })
       .then(resData => setData(resData))
@@ -51,28 +59,24 @@ export default function RecruiterLensPage() {
       .finally(() => setLoading(false));
   }, [selectedRepoId, enableAi]);
 
+  const selectedName = repos.find(r => r.id === selectedRepoId)?.name;
+
   return (
-    <div className="main-content" style={{ maxWidth: 1000, margin: '0 auto' }}>
-      <div className="dashboard-header" style={{ marginBottom: 32 }}>
-        <div>
-          <h1 className="dashboard-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            Recruiter Lens™
-          </h1>
-          <p className="dashboard-sub">Simulates how a real hiring manager evaluates your repository.</p>
+    <div className="recruiter-page">
+      <header className="page-head">
+        <div className="page-head-text">
+          <h1 className="page-head-title">Recruiter Lens</h1>
+          <p className="page-head-sub">How a hiring manager would read this repository</p>
         </div>
-        
+
         {repos.length > 0 && (
-          <div style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
-            <CustomToggle 
-              checked={enableAi} 
-              onChange={setEnableAi} 
-              label="Generate AI Commentary" 
-            />
-            <select 
-              className="settings-input" 
-              style={{ width: 250 }}
+          <div className="page-head-actions recruiter-controls">
+            <CustomToggle id="ai-commentary" checked={enableAi} onChange={setEnableAi} label="AI commentary" />
+            <select
+              className="settings-input recruiter-select"
               value={selectedRepoId}
               onChange={e => setSelectedRepoId(e.target.value)}
+              aria-label="Repository to evaluate"
             >
               {repos.map(r => (
                 <option key={r.id} value={r.id}>{r.name}</option>
@@ -80,104 +84,84 @@ export default function RecruiterLensPage() {
             </select>
           </div>
         )}
-      </div>
+      </header>
 
       {error && (
-        <div className="settings-banner settings-banner--error" style={{ marginBottom: 24 }}>
-          <span className="settings-banner-icon">✕</span>
+        <div className="settings-banner settings-banner--error" role="alert">
+          <span className="settings-banner-icon"><Icon name="alert" size={16} /></span>
           {error}
         </div>
       )}
 
       {loading && (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 64, color: 'var(--gray-400)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span className="btn-spinner" style={{ width: 20, height: 20 }} />
-            Analyzing {repos.find(r => r.id === selectedRepoId)?.name}...
-          </div>
+        <div className="recruiter-loading">
+          <span className="btn-spinner" />
+          Evaluating {selectedName}…
         </div>
       )}
 
       {data && !loading && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-          
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 24 }}>
-            {/* Score Card */}
-            <div className="settings-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 48 }}>
-              <div style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--gray-400)', marginBottom: 8, fontWeight: 600 }}>
-                Portfolio Score
-              </div>
-              <div style={{ fontSize: 72, fontWeight: 700, lineHeight: 1, color: data.portfolio_score >= 80 ? 'var(--green-400)' : data.portfolio_score >= 60 ? 'var(--yellow-400)' : 'var(--red-400)' }}>
-                {data.portfolio_score}
-              </div>
-              <div style={{ fontSize: 24, color: 'var(--gray-500)', marginTop: 4 }}>
-                / 100
-              </div>
+        <div className="recruiter-grid">
+          <section className="panel recruiter-score-panel">
+            <span className="panel-eyebrow">Portfolio score</span>
+            <p className="recruiter-score">
+              {data.portfolio_score}
+              <span className="recruiter-score-max">/100</span>
+            </p>
+            <div className="recruiter-score-bar" role="img" aria-label={`${data.portfolio_score} out of 100`}>
+              <span style={{ width: `${data.portfolio_score}%` }} />
+            </div>
+            {data.signals['Portfolio Readiness'] && (
+              <span className={`recruiter-readiness tone-${signalTone(data.signals['Portfolio Readiness'])}`}>
+                {data.signals['Portfolio Readiness']}
+              </span>
+            )}
+          </section>
+
+          <section className="panel recruiter-commentary-panel">
+            <div className="panel-head">
+              <h2 className="panel-title">Commentary</h2>
+              {data.commentary && <ProviderBadge provider={data.provider} />}
             </div>
 
-            {/* Commentary Card */}
-            <div className="settings-card" style={{ position: 'relative' }}>
-              <h2 className="settings-card-title" style={{ marginBottom: 16 }}>Recruiter Commentary</h2>
-              
-              {data.commentary ? (
-                <>
-                  <div style={{ fontSize: 16, lineHeight: 1.6, color: 'var(--gray-100)', fontStyle: 'italic', paddingLeft: 16, borderLeft: '4px solid var(--gray-700)' }}>
-                    "{data.commentary}"
+            {data.commentary ? (
+              <blockquote className="recruiter-quote">{data.commentary}</blockquote>
+            ) : (
+              <div className="panel-empty">
+                <p>Rule-based scoring only. Turn on AI commentary above for a written assessment.</p>
+                <Link href="/settings" className="btn-secondary btn-sm">Configure AI</Link>
+              </div>
+            )}
+          </section>
+
+          <section className="panel">
+            <h2 className="panel-title">Hiring signals</h2>
+            <dl className="signal-list">
+              {Object.entries(data.signals)
+                .filter(([key]) => key !== 'Portfolio Readiness')
+                .map(([key, value]) => (
+                  <div key={key} className="signal-row">
+                    <dt className="signal-name">{key}</dt>
+                    <dd className={`signal-value tone-${signalTone(value)}`}>{value}</dd>
                   </div>
-                  <div style={{ position: 'absolute', bottom: 20, right: 24 }}>
-                    <ProviderBadge provider={data.provider} />
-                  </div>
-                </>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start', color: 'var(--gray-400)' }}>
-                  <p>AI Commentary is disabled. To unlock human-style feedback, please enable Adaptive AI Routing in Settings.</p>
-                  <Link href="/settings" className="btn-primary btn-sm">Enable AI in Settings</Link>
-                </div>
-              )}
-            </div>
-          </div>
+                ))}
+            </dl>
+          </section>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
-            {/* Hiring Signals */}
-            <div className="settings-card">
-              <h2 className="settings-card-title" style={{ marginBottom: 16 }}>Hiring Signals</h2>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {Object.entries(data.signals).map(([key, value]) => {
-                  let colorClass = 'var(--gray-400)';
-                  if (value === 'Strong' || value === 'High' || value === 'Good') colorClass = 'var(--green-400)';
-                  else if (value === 'Moderate') colorClass = 'var(--yellow-400)';
-                  else if (value === 'Weak' || value === 'Low') colorClass = 'var(--red-400)';
-
-                  return (
-                    <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 12, borderBottom: '1px solid var(--gray-800)' }}>
-                      <span style={{ color: 'var(--gray-300)', fontWeight: 500 }}>{key}</span>
-                      <span style={{ color: colorClass, fontWeight: 600, fontSize: 14 }}>{value}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Improvement Suggestions */}
-            <div className="settings-card">
-              <h2 className="settings-card-title" style={{ marginBottom: 16 }}>Improvement Suggestions</h2>
-              <ul style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingLeft: 20, margin: 0, color: 'var(--gray-300)' }}>
-                {data.improvements.length > 0 ? data.improvements.map((imp, idx) => (
-                  <li key={idx} style={{ lineHeight: 1.5 }}>
-                    To move to a <strong>{Math.min(100, data.portfolio_score + 9)}</strong>:
-                    <br />
-                    • {imp}
-                  </li>
-                )) : (
-                  <div style={{ color: 'var(--green-400)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 6L9 17l-5-5"/></svg>
-                    Perfect score! No suggestions.
-                  </div>
-                )}
-              </ul>
-            </div>
-          </div>
-          
+          <section className="panel">
+            <h2 className="panel-title">What to improve</h2>
+            {data.improvements.length > 0 ? (
+              <ol className="improvement-list">
+                {data.improvements.map((improvement, idx) => (
+                  <li key={idx}>{improvement}</li>
+                ))}
+              </ol>
+            ) : (
+              <p className="panel-empty tone-ok">
+                <Icon name="check" size={16} /> Nothing outstanding — this repo scores on every criterion.
+              </p>
+            )}
+          </section>
         </div>
       )}
     </div>
